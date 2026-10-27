@@ -1,0 +1,90 @@
+name: BSD native roc build (temporary)
+on:
+  workflow_dispatch:
+    inputs:
+      roc_ref:
+        description: Anton-4-bot/roc ref to build
+        default: bsd-native-build
+      deps_run:
+        description: release-roc-deps run with the deps-* artifacts
+        default: '40383309255'
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  bsd-native:
+    name: native ${{ matrix.os }} ${{ matrix.version }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: freebsd
+            version: '15.1'
+            zig_sha256: a314f1cc92d098bd39caf9e5607a0de2a8fd0d00064776cb3fd5b3bee38a67c9
+          - os: netbsd
+            version: '11.0'
+            zig_sha256: 10f71cc89efbafc6e22447f23c44047d53c5d2061c82b1c32efd1ef55ea2d9b6
+          - os: openbsd
+            version: '8.0'
+            zig_sha256: 5e9606fc322ef4c346c199e162d26e4c293358a36ea3ca72e877d42ef71e24be
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # ratchet:actions/checkout@v6.0.2
+        with:
+          repository: Anton-4-bot/roc
+          ref: ${{ inputs.roc_ref }}
+
+      # Extracted on the runner: OpenBSD's base tar cannot read xz.
+      - name: Fetch Zig and the dependency bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPS_RUN: ${{ inputs.deps_run }}
+          OS: ${{ matrix.os }}
+          REPOSITORY: ${{ github.repository }}
+          ZIG_SHA256: ${{ matrix.zig_sha256 }}
+        run: |
+          set -euo pipefail
+          git log --oneline -1
+          zig_archive="zig-x86_64-$OS-0.17.0.tar.xz"
+          curl --fail --location --retry 3 -o "$RUNNER_TEMP/$zig_archive" "https://ziglang.org/download/0.17.0/$zig_archive"
+          echo "$ZIG_SHA256  $RUNNER_TEMP/$zig_archive" | sha256sum --check
+          mkdir bsd-zig
+          tar -xJf "$RUNNER_TEMP/$zig_archive" --strip-components=1 -C bsd-zig
+          gh run download "$DEPS_RUN" --repo "$REPOSITORY" --name "deps-x86_64-$OS-none" --dir "$RUNNER_TEMP/deps"
+          mkdir bsd-deps
+          tar -xJf "$RUNNER_TEMP/deps/x86_64-$OS-none.tar.xz" -C bsd-deps
+          cat bsd-deps/roc-deps-build.json
+
+      - name: Start ${{ matrix.os }} VM
+        uses: Anton-4/bsd-action@210435e2d3ab2393c7cad5c69014330efadd8f39 # master
+        with:
+          operating_system: ${{ matrix.os }}
+          version: ${{ matrix.version }}
+          memory: 12G
+          cpu_count: 4
+          sync_files: runner-to-vm
+
+      - name: build roc natively
+        shell: cpa.sh {0}
+        run: |
+          set -eu
+          uname -a
+          df -h .
+          ./bsd-zig/zig version
+          start=$(date +%s)
+          ./bsd-zig/zig build roc -Droc-deps-path="$PWD/bsd-deps"
+          echo "zig build roc took $(( $(date +%s) - start ))s"
+
+      - name: run hello world
+        shell: cpa.sh {0}
+        run: |
+          set -eu
+          output="$(./zig-out/bin/roc --no-cache test/echo/hello.roc)"
+          echo "$output"
+          if [ "$output" != "Hello, World!" ]; then
+            echo "Expected 'Hello, World!' but got '$output'."
+            exit 1
+          fi
