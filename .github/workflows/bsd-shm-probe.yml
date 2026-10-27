@@ -1,0 +1,34 @@
+name: NetBSD shared memory probe (temporary)
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # ratchet:actions/checkout@v6.0.2
+      - name: Fetch Zig
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 -o "$RUNNER_TEMP/zig.tar.xz" https://ziglang.org/download/0.17.0/zig-x86_64-netbsd-0.17.0.tar.xz
+          echo "10f71cc89efbafc6e22447f23c44047d53c5d2061c82b1c32efd1ef55ea2d9b6  $RUNNER_TEMP/zig.tar.xz" | sha256sum --check
+          mkdir bsd-zig
+          tar -xJf "$RUNNER_TEMP/zig.tar.xz" --strip-components=1 -C bsd-zig
+      - uses: Anton-4/bsd-action@210435e2d3ab2393c7cad5c69014330efadd8f39 # master
+        with:
+          operating_system: netbsd
+          version: '11.0'
+          memory: 12G
+          cpu_count: 4
+          sync_files: runner-to-vm
+      - name: probe
+        shell: cpa.sh {0}
+        run: |
+          set -eu
+          mount
+          df -h /var/shm /tmp
+          grep -E 'tmpfs|shm' /etc/fstab || true
+          ./bsd-zig/zig run -lc ci/shm-probe.zig
