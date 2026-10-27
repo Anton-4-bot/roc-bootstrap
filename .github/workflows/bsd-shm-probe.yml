@@ -31,4 +31,4 @@ jobs:
           /sbin/mount
           df -h /var/shm /tmp
           grep -E 'tmpfs|shm' /etc/fstab || true
-          ./bsd-zig/zig run -lc ci/shm-probe.zig
+          ./bsd-zig/zig run -lc ci/shm-probe.zig /usr/lib/librt.so
