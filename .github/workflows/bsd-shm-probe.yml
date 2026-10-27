@@ -27,8 +27,8 @@ jobs:
       - name: probe
         shell: cpa.sh {0}
         run: |
-          set -eu
-          mount
+          set -u
+          /sbin/mount
           df -h /var/shm /tmp
           grep -E 'tmpfs|shm' /etc/fstab || true
           ./bsd-zig/zig run -lc ci/shm-probe.zig
