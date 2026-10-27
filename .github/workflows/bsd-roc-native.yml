@@ -72,6 +72,10 @@ jobs:
         run: |
           set -eu
           uname -a
+          id
+          # OpenBSD's default data size limit is too small for Zig.
+          if [ "$(uname)" = OpenBSD ]; then ulimit -d "$(ulimit -H -d)"; fi
+          ulimit -a
           df -h .
           ./bsd-zig/zig version
           start=$(date +%s)
