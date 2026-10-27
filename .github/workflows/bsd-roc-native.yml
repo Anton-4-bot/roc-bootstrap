@@ -76,6 +76,22 @@ jobs:
           # OpenBSD's default data size limit is too small for Zig.
           if [ "$(uname)" = OpenBSD ]; then ulimit -d "$(ulimit -H -d)"; fi
           ulimit -a
+          # Zig's LLVM backend peaks above 12 GB compiling roc. NetBSD's image
+          # already has 4 GB of swap; add as much to FreeBSD and OpenBSD.
+          sudo=$(command -v sudo || command -v doas)
+          case "$(uname)" in
+            FreeBSD)
+              $sudo dd if=/dev/zero of=/swapfile bs=1m count=4096
+              $sudo chmod 600 /swapfile
+              $sudo swapon "/dev/$($sudo mdconfig -a -t vnode -f /swapfile)"
+              swapinfo -h ;;
+            OpenBSD)
+              $sudo dd if=/dev/zero of=/swapfile bs=1m count=4096
+              $sudo chmod 600 /swapfile
+              $sudo swapctl -a /swapfile
+              swapctl -l ;;
+            *) swapctl -l ;;
+          esac
           df -h .
           ./bsd-zig/zig version
           start=$(date +%s)
